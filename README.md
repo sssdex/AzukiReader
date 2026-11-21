@@ -1,3 +1,13 @@
+> **本仓库是 [sssdex](https://github.com/sssdex) 的个人改版（fork），基于上游 `1.00.12`。**
+> 只改了书架的三个小地方，阅读器、书源、同步等都没动：
+> ① 横滑书架**每跨一本轻振**（15ms / 振幅 150，直接走 Vibrator）
+> ② 封面上下编号**往里收**（`NO.001` / `FILE / 001` 离书口从 10dp 收到 18dp）
+> ③ 书脊与书名的**字体换成思源宋体**并按这个书架的实际尺寸收小字号（实测比照搬更合适）
+>
+> 版本 `1.00.12-mod` · 安装包见 [Releases](../../releases) · 改动清单/构建方式/致谢见 **[FORK-NOTES.md](FORK-NOTES.md)**
+>
+> 上游作者的说明（界面示意、与 MD3 版的区别等）保留在下方。
+
 <p align="center">
   <img src="docs/images/icon.png" width="128" alt="AzukiReader 应用图标" />
 </p>

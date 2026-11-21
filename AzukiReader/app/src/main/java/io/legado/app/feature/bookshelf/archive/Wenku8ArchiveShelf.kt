@@ -33,11 +33,11 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,6 +76,27 @@ internal object ArchiveShelfGeometry {
     fun bookIndex(lane: Int, count: Int) = ((lane % count) + count) % count
 }
 
+/**
+ * 书脊竖排书名与下方书名的衬线字体：思源宋体 CN Medium 的 GB2312 子集
+ * （`res/font/archive_serif.ttf`，SIL OFL 1.1，见 assets/licenses）。
+ * 中文默认是黑体，换成宋体后纸质档案的感觉更对，字号也随之收小一档。
+ */
+private val ArchiveSerif = FontFamily(Font(R.font.archive_serif, FontWeight.Normal))
+
+/** 封面上下编号的缩进：比上游各多收 8dp 左右，编号不再贴着书口。 */
+private const val COVER_PAD_START_DP = 18
+private const val COVER_PAD_TOP_DP = 12
+private const val COVER_PAD_END_DP = 12
+private const val COVER_PAD_BOTTOM_DP = 11
+
+/** 书脊竖排书名：上游 9sp 黑体，换宋体后收小到 8.2sp（与阅读S 那版一致）。 */
+private const val SPINE_TITLE_SP = 8.2f
+private const val SPINE_TITLE_LINE_SP = 9.4f
+
+/** 书架下方书名/作者：上游 17sp/12sp 黑体，宋体字面更宽更重，各收小一档。 */
+private const val CAPTION_TITLE_SP = 16f
+private const val CAPTION_AUTHOR_SP = 11f
+
 /** Bounded visible pool over an unbounded logical lane, including a one-book static case. */
 @Composable
 fun Wenku8ArchiveShelf(
@@ -102,7 +123,14 @@ fun Wenku8ArchiveShelf(
     val callback by rememberUpdatedState(onSettled)
     val currentOpen by rememberUpdatedState(onOpen)
     val currentLongOpen by rememberUpdatedState(onLongOpen)
-    val haptic = LocalHapticFeedback.current
+    // 书架滑动震感：直接调 Vibrator（15ms / 振幅 150），比 Compose 的 tick 明显得多
+    val hapticContext = LocalContext.current
+    val haptics = remember(hapticContext) { ShelfHaptics(hapticContext) }
+    var tickedLane by remember { mutableIntStateOf(Int.MIN_VALUE) }
+    LaunchedEffect(activeLane) {
+        if (tickedLane != Int.MIN_VALUE && tickedLane != activeLane) haptics.tick()
+        tickedLane = activeLane
+    }
     val entrance = remember { Animatable(if (effects.motion) 0f else 1f) }
     LaunchedEffect(effects.motion) { if (effects.motion) entrance.animateTo(1f, tween(720, easing = LinearEasing)) else entrance.snapTo(1f) }
     LaunchedEffect(count) { if (count == 1) focus = 0f }
@@ -120,7 +148,6 @@ fun Wenku8ArchiveShelf(
                 }
             }
             focus = simulation.target
-            haptic.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
             callback(ArchiveShelfGeometry.bookIndex(archiveLaneRound(focus).toInt(), count))
         }
     }
@@ -182,9 +209,7 @@ fun Wenku8ArchiveShelf(
                     } })
                 }
                 .draggable(rememberDraggableState { delta -> if (count > 1) { settling?.cancel()
-                        val oldLane = archiveLaneRound(focus)
-                        focus -= delta / density / pitch
-                        if (oldLane != archiveLaneRound(focus)) haptic.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick) } },
+                        focus -= delta / density / pitch } },
                     Orientation.Horizontal, enabled = count > 1,
                     onDragStarted = { entrance.snapTo(1f) },
                     onDragStopped = { velocity -> settle(velocity = -velocity / density / pitch, minimumVelocity = 50f / pitch) })) {
@@ -233,7 +258,9 @@ fun Wenku8ArchiveShelf(
                                     withTransform({ transform(projection) }) { this@drawWithContent.drawContent() }
                                 } else drawContent()
                             }) {
-                                Column(Modifier.fillMaxSize().background(paper).padding(start = 10.dp, top = 9.dp, end = 10.dp, bottom = 8.dp)) {
+                                Column(Modifier.fillMaxSize().background(paper).padding(
+                                    start = COVER_PAD_START_DP.dp, top = COVER_PAD_TOP_DP.dp,
+                                    end = COVER_PAD_END_DP.dp, bottom = COVER_PAD_BOTTOM_DP.dp)) {
                                     Text("NO.%03d".format(index + 1), fontSize = 8.sp, fontFamily = FontFamily.Monospace, color = ink)
                                     Spacer(Modifier.height(5.dp))
                                     Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -275,8 +302,9 @@ fun Wenku8ArchiveShelf(
                                     Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                                         val glyphs = label.codePoints().toArray().take(7).map { String(Character.toChars(it)) }
                                         Text(glyphs.joinToString("\n") + if (label.codePointCount(0, label.length) > 7) "\n…" else "",
-                                            fontSize = 9.sp, lineHeight = 10.sp, color = ink,
-                                            fontWeight = FontWeight.W600, textAlign = TextAlign.Center)
+                                            fontFamily = ArchiveSerif,
+                                            fontSize = SPINE_TITLE_SP.sp, lineHeight = SPINE_TITLE_LINE_SP.sp, color = ink,
+                                            fontWeight = FontWeight.Normal, textAlign = TextAlign.Center)
                                     }
                                     Text("○", fontSize = 7.sp, color = ink)
                                 }
@@ -287,14 +315,19 @@ fun Wenku8ArchiveShelf(
             }
         }
         val active = ArchiveShelfGeometry.bookIndex(activeLane, count)
-        val labelHeight = with(LocalDensity.current) { (17.sp.toDp() * 1.35f * 2 + 12.sp.toDp() * 1.4f) } + 16.dp
+        val labelHeight = with(LocalDensity.current) {
+            (CAPTION_TITLE_SP.sp.toDp() * 1.35f * 2 + CAPTION_AUTHOR_SP.sp.toDp() * 1.4f)
+        } + 16.dp
         Row(Modifier.fillMaxWidth().archiveShelfReveal(entrance.asState(), .52f).clickable { onOpen?.invoke(active) }
             .height(labelHeight)
             .padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(title(active), color = MaterialTheme.colorScheme.onSurface, fontSize = 17.sp, lineHeight = (17 * 1.35f).sp, fontWeight = FontWeight.W700, minLines = 2, maxLines = 2,
+                Text(title(active), color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = ArchiveSerif, fontSize = CAPTION_TITLE_SP.sp,
+                    lineHeight = (CAPTION_TITLE_SP * 1.35f).sp, fontWeight = FontWeight.Normal, minLines = 2, maxLines = 2,
                     overflow = TextOverflow.Ellipsis)
-                Text(author(active), fontSize = 12.sp, lineHeight = (12 * 1.4f).sp,
+                Text(author(active), fontFamily = ArchiveSerif, fontSize = CAPTION_AUTHOR_SP.sp,
+                    lineHeight = (CAPTION_AUTHOR_SP * 1.4f).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Icon(Icons.AutoMirrored.Default.KeyboardArrowRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

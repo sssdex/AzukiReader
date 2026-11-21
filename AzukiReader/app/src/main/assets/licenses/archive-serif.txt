@@ -1,0 +1,20 @@
+archive_serif.ttf
+=================
+
+Source Han Serif CN Medium (思源宋体 CN Medium)
+Version 1.001
+
+Copyright 2017 Adobe Systems Incorporated (http://www.adobe.com/),
+with Reserved Font Name "Source".
+Copyright 2014-2017 Adobe (http://www.adobe.com/), with Reserved Font
+Name "Source". Source is a trademark of Adobe in the United States
+and/or other countries.
+
+Licensed under the SIL Open Font License, Version 1.1.
+Full license text: https://scripts.sil.org/OFL
+
+This font is bundled in the app only to draw the book titles on the
+archive-style 3D shelf and under it (serif / 宋体 look). It is a
+subset covering GB2312 (6763 hanzi), ASCII and common punctuation,
+produced with fontTools; glyph outlines are not otherwise modified.
+Rare characters outside the subset fall back to the system font.

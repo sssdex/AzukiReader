@@ -6,6 +6,8 @@
     <uses-sdk tools:overrideLibrary="top.yukonga.miuix.kmp.blur,top.yukonga.miuix.kmp.glass,com.itos.coui,com.itos.coui.material3,com.itos.coui.icons" />
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 书架横滑每跨一本书的轻振（15ms / 振幅 150） -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- 自 Android 17 (API 37) 起本地网络保护强制生效：接受局域网入站连接需要该运行时权限，
          否则 Web 服务对局域网内其他设备不可达。targetSdk < 37 时不得声明该权限。 -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
