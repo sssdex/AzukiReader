@@ -40,7 +40,9 @@ fun resolveWenku8Effects(theme: ThemeSettings, saver: Boolean, lowRam: Boolean, 
     Wenku8Effects(
         motion = animatorsEnabled && !saver && !theme.wenku8ReducedEffects && theme.allows(Wenku8PerformanceEffect.Motion),
         spatial = animatorsEnabled && !saver && !lowRam && !theme.wenku8ReducedEffects && theme.allows(Wenku8PerformanceEffect.Motion),
-        shelf3d = !saver && !lowRam && theme.allows(Wenku8PerformanceEffect.Shelf3d),
+        // 立体书架是静态绘制（没有持续动画），省电模式下关掉只会让书架突然变成平铺卡片，
+        // 看起来像「书架丢了」；低内存设备仍然降级。
+        shelf3d = !lowRam && theme.allows(Wenku8PerformanceEffect.Shelf3d),
         optics = !saver && !lowRam && theme.allows(Wenku8PerformanceEffect.Glass),
         blur = !saver && !lowRam && theme.allows(Wenku8PerformanceEffect.Blur),
         edgeBlur = !saver && !lowRam && theme.allows(Wenku8PerformanceEffect.EdgeBlur),

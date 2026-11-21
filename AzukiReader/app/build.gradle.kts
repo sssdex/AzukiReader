@@ -63,7 +63,7 @@ android {
         applicationId = "io.azukireader.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = System.getenv("COMMIT_NUMBER")?.toInt()?.let { 10000 + it } ?: 32663
+        versionCode = System.getenv("COMMIT_NUMBER")?.toInt()?.let { 10000 + it } ?: 32664
         versionName = projectVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -97,7 +97,7 @@ android {
                 signingConfig = signingConfigs.getByName("myConfig")
             }
             // fork 自建包，版本名后缀区分官方发布
-            versionNameSuffix = "-mod"
+            versionNameSuffix = "-mod.2"
             manifestPlaceholders["app_name"] = "@string/app_name"
             isMinifyEnabled = true
             isShrinkResources = true

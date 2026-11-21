@@ -95,40 +95,51 @@ class Wenku8ListeningRepository(
     override fun observe(reader: Boolean): Flow<Wenku8ListeningState> = combine(
         coordinator.state, sessions.state, settings.settings, ReadBook.snapshot,
     ) { source, session, prefs, _ ->
-        val requested = if (reader) ReadBook.book else ReadAloud.bookSession.book ?: ReadBook.book
-        val own = source.bookUrl == requested?.bookUrl && session.status != ReadAloudSessionStatus.Idle
-        val selection = runCatching { GSON.fromJson(ReadAloud.ttsEngine, ReadAloudEngineSelection::class.java) }.getOrNull()
-        val selected = source.voices.firstOrNull { it.isSelected }
-        val selectedSource = when {
-            selection?.engineId == EDGE -> "edge"
-            selection?.engineId == CUSTOM -> "custom"
-            selected?.engineType == ReadAloudVoice.ENGINE_SYSTEM || prefs.ttsEngine.isNullOrBlank() -> "system"
-            else -> "legacy"
-        }
-        val units = if (ReadAloud.isWenku8Online) segments(source.chapterText) else source.textLines.map { ReadAloudSplitUnit(it.text,it.chapterPosition) }
-        val activeIndex = units.indexOfLast { it.chapterPosition <= source.chapterPosition }.coerceAtLeast(0)
-        val cursor = savedCursor(requested?.bookUrl.orEmpty())
-        Wenku8ListeningState(
-            bookName = requested?.name.orEmpty(), bookUrl = requested?.bookUrl.orEmpty(),
-            chapterIndex = if (own) source.chapterIndex else ReadBook.durChapterIndex,
-            chapterTitle = if (own) source.chapterTitle else ReadBook.readerChapterInputWindow.current?.displayTitle.orEmpty(),
-            currentText = if (own) source.playbackText.ifBlank { units.getOrNull(activeIndex)?.text.orEmpty() } else "",
-            segmentIndex = if (own) activeIndex else 0, segmentCount = if (own) units.size else 0,
-            fraction = if (own) source.chapterPosition.toFloat()/source.chapterLength.coerceAtLeast(1) else 0f,
-            active = own, paused = session.status != ReadAloudSessionStatus.Playing,
-            preparing = own && session.preparing, otherBookPlaying = !own && session.status != ReadAloudSessionStatus.Idle,
-            clipPositionMs = if (own) session.clipPositionMs else 0, clipDurationMs = if (own) session.clipDurationMs else 0,
-            error = if (own) session.error else null, skippedSegments = if (own) session.skippedSegments else 0,
-            source = selectedSource, voiceLabel = selected?.name ?: selection?.displayName ?: "系统离线",
-            speed = if (selectedSource in setOf("edge","custom")) prefs.wenku8Speed else (prefs.ttsSpeechRate+5)/10f,
-            follow = session.followReadAloudPosition, timerMinutes = session.timerMinutes,
-            sleepAfterChapter = session.timerChapters > 0,
-            voices = source.voices.map { ListeningVoice(it.id,it.name,it.engineName,it.isSelected) }.toImmutableList(),
-            resumeChapter = cursor?.optInt("chapter")?.takeIf { it >= 0 },
-        )
+        // 朗读设置页直接订阅这个 state：任何一处字段异常都不该让整页崩掉，
+        // 这里兜底返回一份「未开始听书」的空状态。
+        runCatching {
+            val requested = if (reader) ReadBook.book else ReadAloud.bookSession.book ?: ReadBook.book
+            val own = source.bookUrl == requested?.bookUrl && session.status != ReadAloudSessionStatus.Idle
+            val selection = runCatching { GSON.fromJson(ReadAloud.ttsEngine, ReadAloudEngineSelection::class.java) }.getOrNull()
+            val selected = source.voices.firstOrNull { it.isSelected }
+            val selectedSource = when {
+                selection?.engineId == EDGE -> "edge"
+                selection?.engineId == CUSTOM -> "custom"
+                selected?.engineType == ReadAloudVoice.ENGINE_SYSTEM || prefs.ttsEngine.isNullOrBlank() -> "system"
+                else -> "legacy"
+            }
+            val units = if (ReadAloud.isWenku8Online) segments(source.chapterText) else source.textLines.map { ReadAloudSplitUnit(it.text,it.chapterPosition) }
+            val activeIndex = units.indexOfLast { it.chapterPosition <= source.chapterPosition }.coerceAtLeast(0)
+            val cursor = savedCursor(requested?.bookUrl.orEmpty())
+            Wenku8ListeningState(
+                bookName = requested?.name.orEmpty(), bookUrl = requested?.bookUrl.orEmpty(),
+                chapterIndex = if (own) source.chapterIndex else ReadBook.durChapterIndex,
+                chapterTitle = if (own) source.chapterTitle else ReadBook.readerChapterInputWindow.current?.displayTitle.orEmpty(),
+                currentText = if (own) source.playbackText.ifBlank { units.getOrNull(activeIndex)?.text.orEmpty() } else "",
+                segmentIndex = if (own) activeIndex else 0, segmentCount = if (own) units.size else 0,
+                fraction = if (own) source.chapterPosition.toFloat()/source.chapterLength.coerceAtLeast(1) else 0f,
+                active = own, paused = session.status != ReadAloudSessionStatus.Playing,
+                preparing = own && session.preparing, otherBookPlaying = !own && session.status != ReadAloudSessionStatus.Idle,
+                clipPositionMs = if (own) session.clipPositionMs else 0, clipDurationMs = if (own) session.clipDurationMs else 0,
+                error = if (own) session.error else null, skippedSegments = if (own) session.skippedSegments else 0,
+                source = selectedSource, voiceLabel = selected?.name ?: selection?.displayName ?: "系统离线",
+                speed = if (selectedSource in setOf("edge","custom")) prefs.wenku8Speed else (prefs.ttsSpeechRate+5)/10f,
+                follow = session.followReadAloudPosition, timerMinutes = session.timerMinutes,
+                sleepAfterChapter = session.timerChapters > 0,
+                voices = source.voices.map { ListeningVoice(it.id.orEmpty(),it.name.orEmpty(),it.engineName.orEmpty(),it.isSelected) }.toImmutableList(),
+                resumeChapter = cursor?.optInt("chapter")?.takeIf { it >= 0 },
+            )
+        }.getOrElse { Wenku8ListeningState() }
     }.combine(engines.observeAll()) { state, all ->
         val custom = all.firstOrNull { it.id == CUSTOM }
-        state.copy(custom = custom?.let { ListeningCustomConfig(it.baseUrl,it.model,it.appId.ifBlank { "zh-CN" },it.name,it.region,it.apiKey.isNotEmpty()) })
+        runCatching {
+            state.copy(custom = custom?.let {
+                ListeningCustomConfig(
+                    it.baseUrl.orEmpty(), it.model.orEmpty(), it.appId.orEmpty().ifBlank { "zh-CN" },
+                    it.name.orEmpty(), it.region.orEmpty(), it.apiKey.orEmpty().isNotEmpty(),
+                )
+            })
+        }.getOrElse { state }
     }.distinctUntilChanged()
 
     override suspend fun togglePause(reader: Boolean) = commands.withLock {
