@@ -9,6 +9,10 @@
 > 上游作者的说明（界面示意、与 MD3 版的区别等）保留在下方。
 
 <p align="center">
+  <img src="docs/images/azuki-shelf-mod.png" width="300" alt="改版后的立体书架：书脊宋体、封面编号内收" />
+</p>
+
+<p align="center">
   <img src="docs/images/icon.png" width="128" alt="AzukiReader 应用图标" />
 </p>
 
