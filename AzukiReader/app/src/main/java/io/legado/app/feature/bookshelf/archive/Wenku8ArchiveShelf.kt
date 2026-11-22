@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -40,6 +41,7 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -97,6 +99,23 @@ private const val SPINE_TITLE_LINE_SP = 9.4f
 private const val CAPTION_TITLE_SP = 16f
 private const val CAPTION_AUTHOR_SP = 11f
 
+/**
+ * 让书架铺满屏幕宽度。
+ *
+ * 书架是列在「档案书目」同一个 LazyGrid 里的头部 item，而网格有 24dp 的横向 contentPadding，
+ * 所以书架两侧会各留一条空白。这里把测量宽度加宽 2×[bleed] 再左移 [bleed]，
+ * 绘制就能顶到屏幕边缘；下面的书名行等其它内容仍留在原来的边距里。
+ */
+internal fun Modifier.shelfFullBleed(bleed: Dp = 24.dp): Modifier = layout { measurable, constraints ->
+    val inset = bleed.roundToPx()
+    val wide = constraints.copy(
+        minWidth = constraints.maxWidth + inset * 2,
+        maxWidth = constraints.maxWidth + inset * 2,
+    )
+    val placeable = measurable.measure(wide)
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-inset, 0) }
+}
+
 /** Bounded visible pool over an unbounded logical lane, including a one-book static case. */
 @Composable
 fun Wenku8ArchiveShelf(
@@ -106,6 +125,7 @@ fun Wenku8ArchiveShelf(
     title: (Int) -> String,
     onSettled: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    shelfModifier: Modifier = Modifier,
     onOpen: ((Int) -> Unit)? = null,
     onLongOpen: ((Int) -> Unit)? = null,
     author: (Int) -> String = { "" },
@@ -157,7 +177,7 @@ fun Wenku8ArchiveShelf(
     val paper = MaterialTheme.colorScheme.surfaceContainer
     val line = MaterialTheme.colorScheme.outlineVariant
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        BoxWithConstraints(Modifier.widthIn(max = 520.dp).fillMaxWidth()) {
+        BoxWithConstraints(shelfModifier.widthIn(max = 520.dp).fillMaxWidth()) {
             val width = maxWidth.value
             val spine = ArchiveShelfGeometry.spine(width)
             val cover = ArchiveShelfGeometry.cover(width)

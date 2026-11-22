@@ -116,15 +116,14 @@ fun Wenku8MainPager(
     SideEffect { history.page = selected }
     val clock = frame.clock
     val direction = frame.direction
-    var outgoing by remember(frame) { mutableIntStateOf(frame.outgoing) }
     val parent = LocalArchiveReveal.current
     val foreground = remember(parent, clock, motion) {
         derivedStateOf { if (motion) minOf(parent?.value ?: 1f, clock.value) else 1f }
     }
     val settledForeground = remember { mutableFloatStateOf(1f) }
     LaunchedEffect(frame) {
-        if (frame.outgoing >= 0) clock.animateTo(1f, tween(Wenku8Motion.Enter, easing = LinearEasing))
-        outgoing = -1
+        // 新页面用 200ms 的斜向擦除从背景里推出来；旧页面不再留在下面（见下面 visible）。
+        if (frame.outgoing >= 0) clock.animateTo(1f, tween(Wenku8Motion.Page, easing = LinearEasing))
     }
     val fallback = if (LocalAppUiConfiguration.current.theme.hasBackgroundImage(LegadoTheme.isDark)) Modifier
         else Modifier.background(LegadoTheme.colorScheme.background)
@@ -145,12 +144,14 @@ fun Wenku8MainPager(
         repeat(state.pageCount) { page ->
             androidx.compose.runtime.key(key(page)) {
                 val active = page == selected
-                val visible = active || page == outgoing
+                // 只画当前页：以前会把上一个页面留在底下做「斜向擦除」的底衬，
+                // 慢设备上擦除没走完时会看到两个页面的文字叠在一起。
+                val visible = active
                 val clockState = clock.asState()
                 Box(Modifier.fillMaxSize()
-                    .zIndex(if (active) 2f else if (visible) 1f else 0f)
+                    .zIndex(if (active) 2f else 0f)
                     .graphicsLayer { alpha = if (visible) 1f else 0f }
-                    .then(if (visible && motion) Modifier.archivePlane(clockState, direction, !active) else Modifier)
+                    .then(if (visible && motion) Modifier.archivePlane(clockState, direction, false) else Modifier)
                     .then(if (!active) Modifier.clearAndSetSemantics {} else Modifier)
                     .focusProperties { onEnter = { if (!active) cancelFocusChange() } }.focusGroup()
                     // A full-page hit plane prevents events falling through blank areas to retained pages.

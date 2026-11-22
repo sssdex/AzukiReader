@@ -108,6 +108,62 @@ Gson 对 null 取值/序列化，说明某个字段在这台机器上是 null。
 
 > 如果升级后仍会崩，欢迎把新日志贴到 issue：这台机器是 Android 17，可能有额外的系统 TTS 差异。
 
+## 5. 切换标签页的重影 / 书架两侧空白（mod.3）
+
+### 5.1 旧页面不消失，新页面叠上来
+
+**现象**：在底部标签之间切换时，上一个页面的内容没有立刻消失，新页面半透明地盖在上面，
+两页的文字交错，看起来「很卡」。不是每次都能看到。
+
+**原因**：`Wenku8MainPager` 的切换实现是「保留旧页 + 新页斜向擦除」：
+
+```kotlin
+val visible = active || page == outgoing       // 旧页仍在绘制
+... Modifier.archivePlane(clockState, direction, !active)   // 旧页只平移 10dp
+LaunchedEffect(frame) { clock.animateTo(1f, tween(Wenku8Motion.Enter, ...)) }  // 420ms
+```
+
+旧页在整个 420ms 里保持不透明，新页由一个斜向 `clipPath` 从左（或右）扫出来——
+扫到一半时，屏幕左边是旧页、右边是新页，斜边正好切过文字。设备掉帧时这个中间态会停留更久，
+就变成了「两个页面叠在一起」。
+
+**改法**：只绘制当前页，旧页在切换时立即移除；擦除时长从 420ms 收到 200ms（`Wenku8Motion.Page`），
+新页从背景里推出来，不再有重影。
+
+```kotlin
+val visible = active
+if (frame.outgoing >= 0) clock.animateTo(1f, tween(Wenku8Motion.Page, easing = LinearEasing))
+```
+
+文件：`app/src/main/java/io/legado/app/core/designsystem/wenku8/effects/Wenku8PageMotion.kt`
+
+> 代价：切换时不再有「旧页垫在下面」的过渡，但在慢设备上观感明显更干净。
+> 如果之后还想保留旧页做衬底，需要把擦除改成不透明蒙版（`drawRect` 覆盖）而不是让旧页一直画着。
+
+### 5.2 立体书架两侧留空白
+
+**现象**：书架左右各有一条和「档案书目」一样的 24dp 空白，书排不到屏幕边缘。
+
+**原因**：书架是档案书目 LazyGrid 的头部 item，网格的 `contentPadding` 横向 24dp 对所有 item 生效。
+
+**改法**：新增 `Modifier.shelfFullBleed(bleed)`——把测量宽度加宽 `2 × bleed` 再左移 `bleed`，
+只有书架这一块顶到屏幕两边，下面的书名行等仍在原边距：
+
+```kotlin
+internal fun Modifier.shelfFullBleed(bleed: Dp = 24.dp): Modifier = layout { measurable, constraints ->
+    val inset = bleed.roundToPx()
+    val wide = constraints.copy(
+        minWidth = constraints.maxWidth + inset * 2,
+        maxWidth = constraints.maxWidth + inset * 2,
+    )
+    val placeable = measurable.measure(wide)
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-inset, 0) }
+}
+```
+
+调用处（`BookshelfScreen.kt`）传 `shelfModifier = Modifier.shelfFullBleed(24.dp)`；
+`Wenku8ArchiveShelf` 新增 `shelfModifier` 参数，只作用在书架那块 `BoxWithConstraints` 上。
+
 ## 构建
 
 ```bash

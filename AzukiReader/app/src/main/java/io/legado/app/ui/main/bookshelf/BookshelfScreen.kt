@@ -56,6 +56,7 @@ import androidx.compose.ui.res.stringArrayResource
 import io.legado.app.ui.widget.components.image.cover.CoilBookCover
 import io.legado.app.feature.bookshelf.archive.Wenku8ShelfCatalogueRow
 import io.legado.app.feature.bookshelf.archive.Wenku8ShelfDiscoveryHeader
+import io.legado.app.feature.bookshelf.archive.shelfFullBleed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -1872,6 +1873,9 @@ fun BookshelfPage(
                                 author = { if (uiState.isBookLocked(displayBooks[it])) "" else displayBooks[it].book.author },
                                 onSettled = {}, onOpen = { openArchive(it, false, bookshelfSharedCoverSourceId(sharedCoverGroupId) + "/volume") },
                                 onLongOpen = { openArchive(it, true, bookshelfSharedCoverSourceId(sharedCoverGroupId) + "/volume") },
+                                // 网格有 24dp 横向 contentPadding，书架单独铺到屏幕两边
+                                shelfModifier = Modifier
+                                    .shelfFullBleed(24.dp),
                                 focusedBook = { archiveCover(it, Modifier.fillMaxSize(), bookshelfSharedCoverSourceId(sharedCoverGroupId) + "/volume", true) },
                             ) { archiveCover(it, Modifier.fillMaxSize(), null, true) }
                         }
