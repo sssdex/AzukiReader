@@ -180,11 +180,11 @@ private data class ArchivePageFrame(
     val clock: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>,
 )
 
-/** NavDisplay owns this seekable clock, including predictive back and cancellation. */
+/** NavDisplay 负责二级页的转场（见 `archiveSheetTransform`：不透明横向浅推）。
+ * 这里给场景内容一个已完成的 reveal 时钟，避免 scaffold 自己再叠一次 420ms 斜向擦除。
+ */
 @Composable
 fun Wenku8SceneMotion(transition: Transition<EnterExitState>, content: @Composable () -> Unit) {
-    // Secondary pages already use NavDisplay's short opacity transition. Do not
-    // extend its lifetime with another 420ms label animation or scaffold reveal.
     val settled = remember { mutableFloatStateOf(1f) }
     CompositionLocalProvider(LocalArchiveReveal provides settled) { content() }
 }

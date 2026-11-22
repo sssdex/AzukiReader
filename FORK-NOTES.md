@@ -1,4 +1,4 @@
-# 这个 fork 改了什么
+# 这个改版改了什么
 
 基于 **[AzukiPann/AzukiReader](https://github.com/AzukiPann/AzukiReader) `1.00.12`**，只动书架的三处小地方，
 没有碰阅读器、书源、同步、界面其它部分。
@@ -164,6 +164,49 @@ internal fun Modifier.shelfFullBleed(bleed: Dp = 24.dp): Modifier = layout { mea
 调用处（`BookshelfScreen.kt`）传 `shelfModifier = Modifier.shelfFullBleed(24.dp)`；
 `Wenku8ArchiveShelf` 新增 `shelfModifier` 参数，只作用在书架那块 `BoxWithConstraints` 上。
 
+## 6. 设置页（二级 / 三级菜单）切换叠影（mod.4）
+
+**现象**：「设置」和「我的」里点进任何二级页（性能与动效、外观、阅读界面设置、漫画设置……），
+再往里点三级页，切换过程中新旧两页的文字会同时可读，像两张纸叠在一起；
+返回时也一样。截图里的标志是：副标题出现两段（`READING / ARCHIVE` + `ENCES`），
+上半页是旧页的列表、下半页是新页的列表。
+
+**原因**：这些路由没有自己的转场 metadata，走的是 `NavDisplay` 的全局 `transitionSpec`
+→ `navigationPreset(..., wenku8 = true)` → `comfortablePageTransform`：
+
+```kotlin
+(fadeIn(spec) togetherWith fadeOut(spec, targetAlpha = 1f))
+    .apply { targetContentZIndex = 1f }
+```
+
+`fadeOut(..., targetAlpha = 1f)` 是给阅读页做不透明衬底用的：离场页在整个 200ms 里始终保持 alpha = 1。
+但进场页在同一段时间里从 0 淡到 1、又压在最上面，两层的 alpha 加起来始终不等于 1——
+淡化到一半时是「新页 50% + 旧页 100%」，旧页的文字清楚地透在新页中间，就是叠影。
+页面首次组合很重、掉帧时，这个中间态会停留好几帧，看起来就像卡住了；
+`animator_duration_scale` 放慢后可以稳定复现（模拟器实测）。
+
+**改法**：给 Wenku8 的页面导航单独加一个 `archiveSheetTransform`，只做位移、不做 alpha 混合：
+
+```kotlin
+slideInHorizontally(spec) { w -> enterFrom * w / 8 } togetherWith
+    slideOutHorizontally(spec) { w -> -enterFrom * w / 12 }
+// targetContentZIndex = 1f
+```
+
+进场页整页不透明，从侧面推 1/8 屏盖上来；离场页同时反向让出 1/12 屏、压在下面。
+任何时刻画面里只有一层的文字，不可能互相透出。时长仍是 `Wenku8Motion.Page`（200ms）、
+缓动 `Wenku8Motion.Ease`，位移是真的，所以 predictive back / 转场取消仍然可 seek。
+
+文件：
+
+| 文件 | 改动 |
+| --- | --- |
+| `app/src/main/java/io/legado/app/ui/main/MainNavigationTransition.kt` | 新增 `archiveSheetTransform(forward, direction)`；`navigationPreset` 的 `wenku8` 分支改用它 |
+| `app/src/main/java/io/legado/app/core/designsystem/wenku8/effects/Wenku8PageMotion.kt` | `Wenku8SceneMotion` 的注释同步（不再说「二级页走 opacity 转场」） |
+
+> `comfortablePageTransform` 没有删：阅读页（`readerEntryMetadata`）还在用它。
+> 阅读页可能带半透明背景 / 背景图，需要离场页做不透明衬底，不能直接换成滑动。
+
 ## 构建
 
 ```bash
@@ -177,6 +220,16 @@ gradle :app:assembleAppCoreRelease \
 
 本项目要求 Gradle 9.8 / AGP 9.5.1 / JDK 21 / compileSdk 37.1，比常见的 Android 工程新不少。
 
+## 同步上游
+
+本仓库不是 GitHub fork（没有「Sync fork」按钮，因此能被默认搜索索引），同步上游手动做：
+
+```bash
+git remote add upstream https://github.com/AzukiPann/AzukiReader.git   # 只需一次
+git fetch upstream
+git merge upstream/main        # 在 bookshelf-tweaks 上合
+```
+
 ## 致谢
 
 | 项目 | 作者 | 这里用到了什么 |
@@ -187,5 +240,6 @@ gradle :app:assembleAppCoreRelease \
 | [gedoor/legado](https://github.com/gedoor/legado) | gedoor | 上述两个项目的源头 |
 | 阅读S（本人 legado 改版） | sssdex | 震感参数（15ms / 150）与宋体字号的参考 |
 
-上游是纯 vibecoding 的个人项目、作者已说明后续不更新；这个 fork 也只是按自己的使用习惯补三处细节，
-同样不保证维护。上游未声明 License，本 fork 仅作个人使用与学习，版权归原作者。
+上游是纯 vibecoding 的个人项目、作者已说明后续不更新；这个改版也只是按自己的使用习惯调整了书架三处、
+并修掉标签页/设置页的叠影、书架两侧空白、省电模式书架消失与朗读设置崩溃这几个问题，
+同样不保证维护。上游未声明 License，本改版仅作个人使用与学习，版权归原作者。
