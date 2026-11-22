@@ -3,7 +3,8 @@
 基于 **[AzukiPann/AzukiReader](https://github.com/AzukiPann/AzukiReader) `1.00.12`**，只动书架的三处小地方，
 没有碰阅读器、书源、同步、界面其它部分。
 
-- 版本：`1.00.12-mod`（versionCode `32663`，包名仍是 `io.azukireader.app`，可与官方版覆盖安装/共存二选一）
+- 版本：`1.00.12-mod.2`（versionCode `32664`；`mod` 是 `32663`，两者只差第 4 节的两个修复）
+  包名仍是 `io.azukireader.app`，可与官方版覆盖安装/共存二选一
 - 分支：`bookshelf-tweaks`
 - 安装包见 [Releases](../../releases)
 
@@ -46,6 +47,66 @@
   - 封面上的 `NO.xxx` / `FILE / xxx` 仍是等宽字体（档案编号的观感，和原版一致）
 - 字体是 GB2312 子集（6763 汉字 + ASCII + 常用标点，2.5MB），生僻字会回落到系统字体。
   授权见 `app/src/main/assets/licenses/archive-serif.txt`（SIL OFL 1.1）。
+
+## 4. 顺手修的两个问题（mod.2）
+
+### 4.1 省电模式下立体书架会「消失」
+
+**现象**：手机电量低、系统自动进省电模式后，书架从立体的书脊变成一排平铺的封面卡片
+（只剩 `NO.xxx` / `FILE / xxx` 和封面），看起来像书架没了。
+
+**原因**：上游把「省电模式」也算进了立体书架的开关：
+
+```kotlin
+// Wenku8Effects.resolveWenku8Effects
+shelf3d = !saver && !lowRam && theme.allows(Wenku8PerformanceEffect.Shelf3d)
+```
+
+`saver` 来自 `PowerManager.isPowerSaveMode`，一进省电模式就被置为 false，书架直接降级成平铺。
+
+**改法**：书架是一次性绘制的静态画面（没有持续动画），省电模式下没必要降级，去掉 `saver` 条件：
+
+```kotlin
+shelf3d = !lowRam && theme.allows(Wenku8PerformanceEffect.Shelf3d)
+```
+
+低内存设备（`isLowRamDevice`）仍会降级；显式打开「性能与动效 → 低性能模式」时，
+仍按那一页的「保留效果」处理（勾上「立体书架」即可保持 3D）。
+
+文件：`app/src/main/java/io/legado/app/core/designsystem/wenku8/effects/Wenku8Effects.kt`
+
+### 4.2 朗读设置页偶发崩溃（NPE）
+
+**现象**：进入「设置 → 朗读设置」时偶发崩溃，日志首行是：
+
+```
+java.lang.NullPointerException: Attempt to invoke virtual method
+'java.lang.Class java.lang.Object.getClass()' on a null object reference
+```
+
+**定位**：用本仓库自己 build 出来的 `app/build/outputs/mapping/appCoreRelease/mapping.txt`
+反查混淆栈，关键帧对应关系是
+
+| 混淆帧 | 真实位置 |
+| --- | --- |
+| `ft.p0.<init>` | `Wenku8ListeningState`（听书状态）的构造函数 |
+| `ws.hi.invokeSuspend` | `Wenku8ListeningRepository` 里的 flow lambda |
+| `b70.o0` / `c70.q` | `mapLatest` / `combine` |
+
+也就是说崩在「朗读设置页订阅听书状态」这条流上。`Object.getClass()` 的空指针通常来自
+Gson 对 null 取值/序列化，说明某个字段在这台机器上是 null。
+
+**改法**（防御性）：模拟器（Android 16）上反复进出朗读设置复现不出来，没有确认到具体空字段，
+所以做两层兜底，保证这一页不会再整页崩：
+
+- `observe()` 里整段状态构建包一层 `runCatching`，异常时退回 `Wenku8ListeningState()`
+  （等价「未开始听书」）；
+- 声音列表项 `ListeningVoice(...)` 与自定义音色 `ListeningCustomConfig(...)` 里可能为空的字符串
+  统一 `orEmpty()` 后再用。
+
+文件：`app/src/main/java/io/legado/app/data/repository/Wenku8ListeningRepository.kt`
+
+> 如果升级后仍会崩，欢迎把新日志贴到 issue：这台机器是 Android 17，可能有额外的系统 TTS 差异。
 
 ## 构建
 
