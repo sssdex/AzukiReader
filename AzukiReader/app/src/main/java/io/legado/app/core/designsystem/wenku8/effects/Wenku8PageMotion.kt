@@ -180,7 +180,7 @@ private data class ArchivePageFrame(
     val clock: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>,
 )
 
-/** NavDisplay 负责二级页的转场（见 `archiveSheetTransform`：不透明横向浅推）。
+/** NavDisplay 负责二级页的转场（见 `archiveFadeThroughTransform`：旧页先淡出、新页再淡入）。
  * 这里给场景内容一个已完成的 reveal 时钟，避免 scaffold 自己再叠一次 420ms 斜向擦除。
  */
 @Composable

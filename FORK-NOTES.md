@@ -164,7 +164,7 @@ internal fun Modifier.shelfFullBleed(bleed: Dp = 24.dp): Modifier = layout { mea
 调用处（`BookshelfScreen.kt`）传 `shelfModifier = Modifier.shelfFullBleed(24.dp)`；
 `Wenku8ArchiveShelf` 新增 `shelfModifier` 参数，只作用在书架那块 `BoxWithConstraints` 上。
 
-## 6. 设置页（二级 / 三级菜单）切换叠影（mod.4）
+## 6. 设置页（二级 / 三级菜单）切换叠影（mod.4 → mod.5）
 
 **现象**：「设置」和「我的」里点进任何二级页（性能与动效、外观、阅读界面设置、漫画设置……），
 再往里点三级页，切换过程中新旧两页的文字会同时可读，像两张纸叠在一起；
@@ -185,27 +185,43 @@ internal fun Modifier.shelfFullBleed(bleed: Dp = 24.dp): Modifier = layout { mea
 页面首次组合很重、掉帧时，这个中间态会停留好几帧，看起来就像卡住了；
 `animator_duration_scale` 放慢后可以稳定复现（模拟器实测）。
 
-**改法**：给 Wenku8 的页面导航单独加一个 `archiveSheetTransform`，只做位移、不做 alpha 混合：
+**改法**：给 Wenku8 的页面导航单独加 `archiveFadeThroughTransform`——淡入淡出都保留，
+但把两段错开，不再同时进行：
 
 ```kotlin
-slideInHorizontally(spec) { w -> enterFrom * w / 8 } togetherWith
-    slideOutHorizontally(spec) { w -> -enterFrom * w / 12 }
-// targetContentZIndex = 1f
+val page = Wenku8Motion.Page                       // 200ms
+val outMillis = page * 2 / 5                       // 80ms：旧页淡出
+fadeOut(tween(outMillis, easing = LinearEasing)) togetherWith ...
+fadeIn(tween(page - outMillis, delayMillis = outMillis, easing = Wenku8Motion.Ease))
 ```
 
-进场页整页不透明，从侧面推 1/8 屏盖上来；离场页同时反向让出 1/12 屏、压在下面。
-任何时刻画面里只有一层的文字，不可能互相透出。时长仍是 `Wenku8Motion.Page`（200ms）、
-缓动 `Wenku8Motion.Ease`，位移是真的，所以 predictive back / 转场取消仍然可 seek。
+旧页先淡出（80ms，结束后立即移出组合），新页再淡入（120ms），合计 200ms。
+任何一帧都只有一页在参与 alpha 合成：不会出现「半透明新页 + 实心旧页」的叠加，
+屏幕上也少了一整页的绘制与背景/模糊采样。
+
+**为什么不是滑动（mod.4 走过的弯路）**：mod.4 试过「两页都不改 alpha、整页不透明横向浅推」，
+叠影确实没了，但把原来的淡入淡出换成了位移，手感变了；而且滑动会让离场页整页每帧重绘/重采样，
+在开着玻璃/模糊的机器上反而更卡。这条路线已撤销，mod.5 回到淡入淡出。
+
+**验证**（模拟器 Android 16，`animator_duration_scale = 10` 放慢后录屏抽帧）：
+逐帧截图里旧页淡出时只有旧页、新页淡入时只有新页，没有任何一帧两页文字叠在一起。
+`gfxinfo` 同脚本（5 次进出二级页）对比：
+
+| 版本 | 掉帧比例 | p50 | p99 | Missed Vsync |
+| --- | --- | --- | --- | --- |
+| mod.3（原版淡入 + 旧页垫底） | 68.9% | 57ms | 117ms | 30 |
+| mod.4（不透明浅推） | 65.5% | 57ms | 150ms | 29 |
+| **mod.5（淡出错开淡入）** | **39.3%** | **42ms** | **105ms** | **13** |
 
 文件：
 
 | 文件 | 改动 |
 | --- | --- |
-| `app/src/main/java/io/legado/app/ui/main/MainNavigationTransition.kt` | 新增 `archiveSheetTransform(forward, direction)`；`navigationPreset` 的 `wenku8` 分支改用它 |
-| `app/src/main/java/io/legado/app/core/designsystem/wenku8/effects/Wenku8PageMotion.kt` | `Wenku8SceneMotion` 的注释同步（不再说「二级页走 opacity 转场」） |
+| `app/src/main/java/io/legado/app/ui/main/MainNavigationTransition.kt` | 新增 `archiveFadeThroughTransform(motionEnabled)`；`navigationPreset` 的 `wenku8` 分支改用它 |
+| `app/src/main/java/io/legado/app/core/designsystem/wenku8/effects/Wenku8PageMotion.kt` | `Wenku8SceneMotion` 的注释同步（场景内仍提供 settled reveal，避免和 scaffold 的 420ms 擦除叠加） |
 
 > `comfortablePageTransform` 没有删：阅读页（`readerEntryMetadata`）还在用它。
-> 阅读页可能带半透明背景 / 背景图，需要离场页做不透明衬底，不能直接换成滑动。
+> 阅读页可能带半透明背景 / 背景图，需要离场页做不透明衬底，不能直接换成顺序淡化。
 
 ## 构建
 
