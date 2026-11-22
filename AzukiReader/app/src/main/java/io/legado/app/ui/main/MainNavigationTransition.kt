@@ -76,7 +76,7 @@ internal fun AnimatedContentTransitionScope<Scene<NavKey>>.navigationPreset(
     if (initialState !is NavigationPageScene || targetState !is NavigationPageScene) return null
     val direction = if (layoutDirection == LayoutDirection.Rtl) -1 else 1
     if (wenku8) {
-        return archiveSheetTransform(forward, direction)
+        return archiveFadeThroughTransform(motionEnabled)
     }
     return when (style) {
         NavigationAnimationStyle.Default -> null
@@ -87,24 +87,28 @@ internal fun AnimatedContentTransitionScope<Scene<NavKey>>.navigationPreset(
 }
 
 /**
- * 二级 / 三级页（设置、搜索等）的转场：两页都不改 alpha，只做 1/8 屏的横向「档案纸」浅推。
+ * 二级 / 三级页（设置、搜索等）的转场：保留原来的「淡入/淡出」，但把两段错开。
  *
- * 旧实现 [comfortablePageTransform] 把离场页的 alpha 钉在 1（给阅读页留不透明衬底），
- * 进场页再从 0 淡到 1。淡化过程中新页半透明、旧页完全不透明，两页的文字同时可读，
- * 在设置页快速进出二级、三级菜单时会明显看到「叠影」；掉帧时这一中间态停留更久。
- * 这里两页始终不透明，进场页整页盖在离场页之上滑动，任何时刻都不做 alpha 混合，
- * 文字不可能互相透出来，同时保留真实位移，predictive back 仍然可 seek。
+ * 旧实现 [comfortablePageTransform] 把离场页 alpha 钉在 1，新页再从 0 淡入——
+ * 淡化期间新页半透明、旧页完全不透明，两页文字同时可读（叠影）。
+ * 这里改成 Material 的 fade-through：旧页先淡出（80ms），新页再淡入（120ms，接在 80ms 后），
+ * 两段合计仍是原来的 200ms（`Wenku8Motion.Page`），但任何时刻都不会出现「新页半透明 + 旧页实心」
+ * 的叠加帧；同时屏幕里只有一页在做 alpha 合成，不再为两页同时付绘制/背景采样开销。
+ * 阅读页仍用 [comfortablePageTransform]（那边需要不透明衬底）。
  */
-internal fun archiveSheetTransform(forward: Boolean, direction: Int): ContentTransform {
-    val spec = tween<IntOffset>(
-        io.legado.app.core.designsystem.wenku8.chrome.Wenku8Motion.Page,
-        easing = io.legado.app.core.designsystem.wenku8.chrome.Wenku8Motion.Ease,
+internal fun archiveFadeThroughTransform(motionEnabled: Boolean = true): ContentTransform {
+    if (!motionEnabled) return EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
+    val page = io.legado.app.core.designsystem.wenku8.chrome.Wenku8Motion.Page
+    val outMillis = page * 2 / 5
+    val exit = fadeOut(tween(outMillis, easing = LinearEasing))
+    val enter = fadeIn(
+        tween(
+            page - outMillis,
+            delayMillis = outMillis,
+            easing = io.legado.app.core.designsystem.wenku8.chrome.Wenku8Motion.Ease,
+        ),
     )
-    val enterFrom = if (forward) direction else -direction
-    return (
-        slideInHorizontally(spec) { width -> enterFrom * width / 8 } togetherWith
-            slideOutHorizontally(spec) { width -> -enterFrom * width / 12 }
-        ).apply { targetContentZIndex = 1f }
+    return enter togetherWith exit
 }
 
 /** Fade only the upper surface, so the window never shows through two translucent pages.
