@@ -76,7 +76,7 @@ internal fun AnimatedContentTransitionScope<Scene<NavKey>>.navigationPreset(
     if (initialState !is NavigationPageScene || targetState !is NavigationPageScene) return null
     val direction = if (layoutDirection == LayoutDirection.Rtl) -1 else 1
     if (wenku8) {
-        return archiveFadeThroughTransform(motionEnabled)
+        return archivePageFadeTransform(predictive = swipeEdge != null)
     }
     return when (style) {
         NavigationAnimationStyle.Default -> null
@@ -86,35 +86,8 @@ internal fun AnimatedContentTransitionScope<Scene<NavKey>>.navigationPreset(
     }
 }
 
-/**
- * 二级 / 三级页（设置、搜索等）的转场：保留原来的「淡入/淡出」，但把两段错开。
- *
- * 旧实现 [comfortablePageTransform] 把离场页 alpha 钉在 1，新页再从 0 淡入——
- * 淡化期间新页半透明、旧页完全不透明，两页文字同时可读（叠影）。
- * 这里改成 Material 的 fade-through：旧页先淡出（80ms），新页再淡入（120ms，接在 80ms 后），
- * 两段合计仍是原来的 200ms（`Wenku8Motion.Page`），但任何时刻都不会出现「新页半透明 + 旧页实心」
- * 的叠加帧；同时屏幕里只有一页在做 alpha 合成，不再为两页同时付绘制/背景采样开销。
- * 阅读页仍用 [comfortablePageTransform]（那边需要不透明衬底）。
- */
-internal fun archiveFadeThroughTransform(motionEnabled: Boolean = true): ContentTransform {
-    if (!motionEnabled) return EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
-    val page = io.legado.app.core.designsystem.wenku8.chrome.Wenku8Motion.Page
-    val outMillis = page * 2 / 5
-    val exit = fadeOut(tween(outMillis, easing = LinearEasing))
-    val enter = fadeIn(
-        tween(
-            page - outMillis,
-            delayMillis = outMillis,
-            easing = io.legado.app.core.designsystem.wenku8.chrome.Wenku8Motion.Ease,
-        ),
-    )
-    return enter togetherWith exit
-}
-
 /** Fade only the upper surface, so the window never shows through two translucent pages.
  * Explicit alpha transitions keep NavDisplay lifecycle/predictive cancellation seekable.
- *
- * 仅剩阅读页（`readerEntryMetadata`）在用：阅读页可能带半透明/背景图，需要离场页做不透明衬底。
  */
 internal fun comfortablePageTransform(forward: Boolean, motionEnabled: Boolean = true): ContentTransform {
     if (!motionEnabled) return EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
@@ -127,6 +100,35 @@ internal fun comfortablePageTransform(forward: Boolean, motionEnabled: Boolean =
     } else {
         (fadeIn(spec, initialAlpha = 1f) togetherWith fadeOut(spec)).apply { targetContentZIndex = -1f }
     }
+}
+
+/**
+ * 二级 / 三级页（设置、我的、搜索等）的转场。
+ *
+ * 原版 [comfortablePageTransform] 做两件事：新页 200ms 淡入，同时用
+ * `fadeOut(targetAlpha = 1f)` 把离场页整页钉在下面垫底。两张页面本身都是透明的，
+ * 所以叠影不是背景问题——是离场页的文字在整段 200ms 里始终不透明，
+ * 新页半透明淡入时两页的字就同时可读。
+ *
+ * 这里把原版唯一看得见的动效原样留着：新页仍用 `Wenku8Motion.Page`（200ms）+
+ * `Wenku8Motion.Ease` 从 alpha 0 淡到 1，时长、曲线、起止透明度一项没改；
+ * 只把离场页改成转场一开始就淡到 alpha 0（`fadeOut(tween(0))`），不再垫在下面。
+ * 页面是透明的，淡入期间透出来的是窗口背景——`BaseComposeActivity.SyncWindowBackground`
+ * 已把它同步成主题背景色，所以看起来仍然是「新页在原来的底色上淡进来」，
+ * 不会黑一下或空一下。返回方向也用同一条淡入，保证任何一帧都只有一页在淡。
+ *
+ * 预见性返回（拖动中）仍走原版 [comfortablePageTransform]：那个转场跟手、可 seek，
+ * 松手前不能先把当前页抽走。该功能默认关闭（`AppShellSettings.predictiveBackEnabled = false`）。
+ */
+internal fun archivePageFadeTransform(predictive: Boolean = false): ContentTransform {
+    if (predictive) return comfortablePageTransform(false)
+    val spec = tween<Float>(
+        io.legado.app.core.designsystem.wenku8.chrome.Wenku8Motion.Page,
+        easing = io.legado.app.core.designsystem.wenku8.chrome.Wenku8Motion.Ease,
+    )
+    // ExitTransition.None 只是「不参与动画」，离场页会保持不透明留在下面；
+    // 0ms 淡出才会真的把它擦掉，且不影响 200ms 的进场淡入。
+    return fadeIn(spec) togetherWith fadeOut(tween(durationMillis = 0))
 }
 
 private fun sidePushTransform(forward: Boolean, direction: Int, predictive: Boolean): ContentTransform {

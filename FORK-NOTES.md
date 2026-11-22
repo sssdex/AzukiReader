@@ -1,10 +1,10 @@
 # 这个改版改了什么
 
-基于 **[AzukiPann/AzukiReader](https://github.com/AzukiPann/AzukiReader) `1.00.12`**，只动书架的三处小地方，
+基于 **[AzukiPann/AzukiReader](https://github.com/AzukiPann/AzukiReader) `1.00.12`**，只动书架与页面转场，
 没有碰阅读器、书源、同步、界面其它部分。
 
-- 版本：`1.00.12-mod.2`（versionCode `32664`；`mod` 是 `32663`，两者只差第 4 节的两个修复）
-  包名仍是 `io.azukireader.app`，可与官方版覆盖安装/共存二选一
+- 版本：`1.00.12-mod.3.1`（versionCode `32668`；mod → mod.2 → mod.3 → mod.3.1 见下面各节，
+  mod.4 / mod.5 走过弯路已撤销）包名仍是 `io.azukireader.app`，可与官方版覆盖安装/共存二选一
 - 分支：`bookshelf-tweaks`
 - 安装包见 [Releases](../../releases)
 
@@ -164,64 +164,61 @@ internal fun Modifier.shelfFullBleed(bleed: Dp = 24.dp): Modifier = layout { mea
 调用处（`BookshelfScreen.kt`）传 `shelfModifier = Modifier.shelfFullBleed(24.dp)`；
 `Wenku8ArchiveShelf` 新增 `shelfModifier` 参数，只作用在书架那块 `BoxWithConstraints` 上。
 
-## 6. 设置页（二级 / 三级菜单）切换叠影（mod.4 → mod.5）
+## 6. 设置页（二级 / 三级菜单）切换叠影（mod.3.1）
 
-**现象**：「设置」和「我的」里点进任何二级页（性能与动效、外观、阅读界面设置、漫画设置……），
-再往里点三级页，切换过程中新旧两页的文字会同时可读，像两张纸叠在一起；
-返回时也一样。截图里的标志是：副标题出现两段（`READING / ARCHIVE` + `ENCES`），
-上半页是旧页的列表、下半页是新页的列表。
+**现象**：设置 / 我的里点进二级页（性能与动效、外观、阅读界面设置……）或再点三级页，
+切换中新旧两页文字同时可读；返回时同样。截图里的标志是：副标题出现两段
+（`READING / ARCHIVE` + `ENCES`），上半页是旧页的列表、下半页是新页的列表。
 
-**原因**：这些路由没有自己的转场 metadata，走的是 `NavDisplay` 的全局 `transitionSpec`
-→ `navigationPreset(..., wenku8 = true)` → `comfortablePageTransform`：
-
-```kotlin
-(fadeIn(spec) togetherWith fadeOut(spec, targetAlpha = 1f))
-    .apply { targetContentZIndex = 1f }
-```
-
-`fadeOut(..., targetAlpha = 1f)` 是给阅读页做不透明衬底用的：离场页在整个 200ms 里始终保持 alpha = 1。
-但进场页在同一段时间里从 0 淡到 1、又压在最上面，两层的 alpha 加起来始终不等于 1——
-淡化到一半时是「新页 50% + 旧页 100%」，旧页的文字清楚地透在新页中间，就是叠影。
-页面首次组合很重、掉帧时，这个中间态会停留好几帧，看起来就像卡住了；
-`animator_duration_scale` 放慢后可以稳定复现（模拟器实测）。
-
-**改法**：给 Wenku8 的页面导航单独加 `archiveFadeThroughTransform`——淡入淡出都保留，
-但把两段错开，不再同时进行：
+**根因**：这些路由走 NavDisplay 全局转场 → `navigationPreset(..., wenku8 = true)` →
+`comfortablePageTransform`：
 
 ```kotlin
-val page = Wenku8Motion.Page                       // 200ms
-val outMillis = page * 2 / 5                       // 80ms：旧页淡出
-fadeOut(tween(outMillis, easing = LinearEasing)) togetherWith ...
-fadeIn(tween(page - outMillis, delayMillis = outMillis, easing = Wenku8Motion.Ease))
+(fadeIn(spec) togetherWith fadeOut(spec, targetAlpha = 1f))   // 离场页 alpha 恒为 1
+    .apply { targetContentZIndex = 1f }                        // 进场页压在上面淡入
 ```
 
-旧页先淡出（80ms，结束后立即移出组合），新页再淡入（120ms），合计 200ms。
-任何一帧都只有一页在参与 alpha 合成：不会出现「半透明新页 + 实心旧页」的叠加，
-屏幕上也少了一整页的绘制与背景/模糊采样。
+`targetAlpha = 1f` 原本是给阅读页做不透明衬底。两张页面本身都是透明的，离场页的文字在整段
+200ms 里始终不透明，新页半透明压在上面，两页的字就同时可读。
 
-**为什么不是滑动（mod.4 走过的弯路）**：mod.4 试过「两页都不改 alpha、整页不透明横向浅推」，
-叠影确实没了，但把原来的淡入淡出换成了位移，手感变了；而且滑动会让离场页整页每帧重绘/重采样，
-在开着玻璃/模糊的机器上反而更卡。这条路线已撤销，mod.5 回到淡入淡出。
+**改法**：原版那条淡入一行不改，只处理垫底的那一页：
 
-**验证**（模拟器 Android 16，`animator_duration_scale = 10` 放慢后录屏抽帧）：
-逐帧截图里旧页淡出时只有旧页、新页淡入时只有新页，没有任何一帧两页文字叠在一起。
-`gfxinfo` 同脚本（5 次进出二级页）对比：
+```kotlin
+val spec = tween<Float>(Wenku8Motion.Page, easing = Wenku8Motion.Ease) // 200ms + Ease，与原版一致
+return fadeIn(spec) togetherWith fadeOut(tween(durationMillis = 0))
+```
 
-| 版本 | 掉帧比例 | p50 | p99 | Missed Vsync |
-| --- | --- | --- | --- | --- |
-| mod.3（原版淡入 + 旧页垫底） | 68.9% | 57ms | 117ms | 30 |
-| mod.4（不透明浅推） | 65.5% | 57ms | 150ms | 29 |
-| **mod.5（淡出错开淡入）** | **39.3%** | **42ms** | **105ms** | **13** |
+- 进场页的时长、曲线、起止透明度（0 → 1）与原版完全相同；
+- 离场页在转场开始就淡到 0，不再参与合成；
+- `ExitTransition.None` 不能用：它只是「不参与动画」，离场页会保持不透明留在下面，实测仍叠影；
+- 页面是透明的，淡入时透出的是窗口背景（`SyncWindowBackground` 已同步成主题背景色），
+  不会空一下或闪黑；
+- 返回方向也用同一条淡入（原版「旧页淡出」必然让下面那页的字透出来）；
+- 拖动式预见性返回仍走原版 `comfortablePageTransform(false)`，该功能默认关闭。
+
+**为什么不这么写**：试过「不透明横向浅推」（换成位移、离场页每帧重采样更卡，mod.4）和
+「旧页先淡出 80ms → 新页再淡入 120ms」（中间整页空掉，等于把原版动画换掉，mod.5），
+都被否掉并撤销；mod.3.1 从 mod.3 源码重建，只动转场这一处。
+
+**验证**（模拟器 Android 16，swiftshader，只做同机对比）：
+
+| 版本 | 总帧数 | 掉帧比例 | p50 | p99 | Missed Vsync |
+| --- | --- | --- | --- | --- | --- |
+| mod.3（原版转场） | 87 | 73.56% | 69ms | 150ms | 44 |
+| **mod.3.1** | 116 | **34.48%** | **40ms** | **105ms** | **12** |
+
+`animator_duration_scale = 10` 慢放录屏 + 逐帧（`docs/images/settings-mod31-enter-frames.png`、
+`settings-mod31-back-frames.png`）：点击后第一帧旧页就消失，淡入过程中只有新页在和背景做
+alpha 合成，没有任何一帧两页叠字。
 
 文件：
 
 | 文件 | 改动 |
 | --- | --- |
-| `app/src/main/java/io/legado/app/ui/main/MainNavigationTransition.kt` | 新增 `archiveFadeThroughTransform(motionEnabled)`；`navigationPreset` 的 `wenku8` 分支改用它 |
-| `app/src/main/java/io/legado/app/core/designsystem/wenku8/effects/Wenku8PageMotion.kt` | `Wenku8SceneMotion` 的注释同步（场景内仍提供 settled reveal，避免和 scaffold 的 420ms 擦除叠加） |
+| `app/src/main/java/io/legado/app/ui/main/MainNavigationTransition.kt` | 新增 `archivePageFadeTransform(predictive)`；`navigationPreset` 的 `wenku8` 分支改调它 |
 
-> `comfortablePageTransform` 没有删：阅读页（`readerEntryMetadata`）还在用它。
-> 阅读页可能带半透明背景 / 背景图，需要离场页做不透明衬底，不能直接换成顺序淡化。
+> `comfortablePageTransform` 没有删：阅读页（`readerEntryMetadata`）还在用它，阅读页可能带
+> 半透明背景，需要那层不透明衬底。
 
 ## 构建
 
