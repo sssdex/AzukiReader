@@ -76,7 +76,7 @@ internal fun AnimatedContentTransitionScope<Scene<NavKey>>.navigationPreset(
     if (initialState !is NavigationPageScene || targetState !is NavigationPageScene) return null
     val direction = if (layoutDirection == LayoutDirection.Rtl) -1 else 1
     if (wenku8) {
-        return comfortablePageTransform(forward)
+        return archiveSheetTransform(forward, direction)
     }
     return when (style) {
         NavigationAnimationStyle.Default -> null
@@ -86,8 +86,31 @@ internal fun AnimatedContentTransitionScope<Scene<NavKey>>.navigationPreset(
     }
 }
 
+/**
+ * 二级 / 三级页（设置、搜索等）的转场：两页都不改 alpha，只做 1/8 屏的横向「档案纸」浅推。
+ *
+ * 旧实现 [comfortablePageTransform] 把离场页的 alpha 钉在 1（给阅读页留不透明衬底），
+ * 进场页再从 0 淡到 1。淡化过程中新页半透明、旧页完全不透明，两页的文字同时可读，
+ * 在设置页快速进出二级、三级菜单时会明显看到「叠影」；掉帧时这一中间态停留更久。
+ * 这里两页始终不透明，进场页整页盖在离场页之上滑动，任何时刻都不做 alpha 混合，
+ * 文字不可能互相透出来，同时保留真实位移，predictive back 仍然可 seek。
+ */
+internal fun archiveSheetTransform(forward: Boolean, direction: Int): ContentTransform {
+    val spec = tween<IntOffset>(
+        io.legado.app.core.designsystem.wenku8.chrome.Wenku8Motion.Page,
+        easing = io.legado.app.core.designsystem.wenku8.chrome.Wenku8Motion.Ease,
+    )
+    val enterFrom = if (forward) direction else -direction
+    return (
+        slideInHorizontally(spec) { width -> enterFrom * width / 8 } togetherWith
+            slideOutHorizontally(spec) { width -> -enterFrom * width / 12 }
+        ).apply { targetContentZIndex = 1f }
+}
+
 /** Fade only the upper surface, so the window never shows through two translucent pages.
  * Explicit alpha transitions keep NavDisplay lifecycle/predictive cancellation seekable.
+ *
+ * 仅剩阅读页（`readerEntryMetadata`）在用：阅读页可能带半透明/背景图，需要离场页做不透明衬底。
  */
 internal fun comfortablePageTransform(forward: Boolean, motionEnabled: Boolean = true): ContentTransform {
     if (!motionEnabled) return EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
