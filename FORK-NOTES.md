@@ -1,4 +1,4 @@
-# 这个 fork 改了什么
+# 这个改版改了什么
 
 基于 **[AzukiPann/AzukiReader](https://github.com/AzukiPann/AzukiReader) `1.00.12`**，只动书架的三处小地方，
 没有碰阅读器、书源、同步、界面其它部分。
@@ -177,6 +177,16 @@ gradle :app:assembleAppCoreRelease \
 
 本项目要求 Gradle 9.8 / AGP 9.5.1 / JDK 21 / compileSdk 37.1，比常见的 Android 工程新不少。
 
+## 同步上游
+
+本仓库不是 GitHub fork（没有「Sync fork」按钮，因此能被默认搜索索引），同步上游手动做：
+
+```bash
+git remote add upstream https://github.com/AzukiPann/AzukiReader.git   # 只需一次
+git fetch upstream
+git merge upstream/main        # 在 bookshelf-tweaks 上合
+```
+
 ## 致谢
 
 | 项目 | 作者 | 这里用到了什么 |
@@ -187,5 +197,5 @@ gradle :app:assembleAppCoreRelease \
 | [gedoor/legado](https://github.com/gedoor/legado) | gedoor | 上述两个项目的源头 |
 | 阅读S（本人 legado 改版） | sssdex | 震感参数（15ms / 150）与宋体字号的参考 |
 
-上游是纯 vibecoding 的个人项目、作者已说明后续不更新；这个 fork 也只是按自己的使用习惯补三处细节，
-同样不保证维护。上游未声明 License，本 fork 仅作个人使用与学习，版权归原作者。
+上游是纯 vibecoding 的个人项目、作者已说明后续不更新；这个改版也只是按自己的使用习惯补三处细节，
+同样不保证维护。上游未声明 License，本改版仅作个人使用与学习，版权归原作者。

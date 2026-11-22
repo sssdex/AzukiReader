@@ -1,4 +1,5 @@
-> **本仓库是 [sssdex](https://github.com/sssdex) 的个人改版（fork），基于上游 `1.00.12`。**
+> **本仓库是 [sssdex](https://github.com/sssdex) 的个人改版，基于上游 [AzukiPann/AzukiReader](https://github.com/AzukiPann/AzukiReader) `1.00.12`。**
+> 独立仓库（不是 GitHub fork，所以能出现在 GitHub 默认搜索里）；同步上游用 `upstream` 远程手动合并，见 [FORK-NOTES.md](FORK-NOTES.md)。
 > 只改了书架的三个小地方，阅读器、书源、同步等都没动：
 > ① 横滑书架**每跨一本轻振**（15ms / 振幅 150，直接走 Vibrator）
 > ② 封面上下编号**往里收**（`NO.001` / `FILE / 001` 离书口从 10dp 收到 18dp）
